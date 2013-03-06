@@ -1,8 +1,8 @@
-default: main.o network.o
-	gcc main.o network.o -lpthread -o speak
+default: speak.o network.o
+	gcc speak.o network.o -lpthread -o speak
 
 speak:
-	gcc -c main.c -lpthread
+	gcc -c speak.c -lpthread
 
 network:
 	gcc -c network.c 
