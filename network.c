@@ -84,7 +84,7 @@ int setup_network(NETWORK_TYPE type, char* ip, int port){
 }
 
 
-int network_init(int argc, char** argv){
+int initialize_network(int argc, char** argv){
 	char* ip = NULL;
 	int port = -1;
 
