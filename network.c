@@ -9,15 +9,15 @@
 #include <arpa/inet.h>
 
 typedef enum{
-	TCP_CLIENT,TCP_SERVER,UDP
+	TCP_CLIENT,TCP_SERVER,UDP_CLIENT,UDP_SERVER
 }NETWORK_TYPE;
 
-NETWORK_TYPE current_type;
+NETWORK_TYPE net_type;
 
 int sock,server_sock;
 struct sockaddr_in server_addr,client_addr;
 
-void setup_server(int port){
+void setup_tcp_server(int port){
 	if((server_sock = socket(AF_INET,SOCK_STREAM,IPPROTO_TCP))<0){
 		printf("Failed to open socket\n");
 		exit(1);
@@ -35,7 +35,7 @@ void setup_server(int port){
 
 	listen(server_sock,5);
 
-	printf("Waiting for connection...\n");
+	printf("Waiting for client to connect...\n");
 
 	int client_len = sizeof(client_addr);
 	sock = accept(server_sock,(struct sockaddr*)&client_addr,&client_len);
@@ -47,7 +47,7 @@ void setup_server(int port){
 	printf("Connected\n");
 }
 
-void connect_to_server(char* ip, int port){
+void tcp_connect(char* ip, int port){
 	if((sock = socket(AF_INET,SOCK_STREAM,IPPROTO_TCP))<0){
 		printf("Failed to open socket\n");
 		exit(1);
@@ -63,23 +63,32 @@ void connect_to_server(char* ip, int port){
 		exit(1);
 	}
 
-	printf("Connected\n");
+	printf("Connected to server\n");
 }
 
-void setup_udp(char* ip, int port){
+void setup_udp_server(char* ip, int port){
+	if((sock = socket(AF_INET,SOCK_DGRAM,0))<0){
+		printf("Failed to open socket\n");
+		exit(1);
+	}
+}
+
+void udp_connect(char* ip, int port){
+
 
 }
 
 
-int setup_network(NETWORK_TYPE type, char* ip, int port){
-	current_type = type;
+int setup_network(char* ip, int port){
 
-	if(current_type == TCP_CLIENT){
-		connect_to_server(ip, port);
-	}else if(current_type == TCP_SERVER){
-		setup_server(port);
+	if(net_type == TCP_CLIENT){
+		tcp_connect(ip, port);
+	}else if(net_type == TCP_SERVER){
+		setup_tcp_server(port);
+	}else if(net_type == UDP_SERVER){
+		setup_udp_server(ip, port);
 	}else{
-		setup_udp(ip, port);
+		udp_connect(ip,port);
 	}
 }
 
@@ -91,7 +100,6 @@ int initialize_network(int argc, char** argv){
 	char c;
 	extern int optind, opterr;
 	extern char* optarg;
-	NETWORK_TYPE net_type = -1;
 
 	while (( c = getopt( argc, argv, "m:a:p:" )) != EOF) {
 		switch ( c ) {
@@ -100,8 +108,10 @@ int initialize_network(int argc, char** argv){
 					net_type = TCP_CLIENT;
 				else if(!strcmp(optarg,"tcpserver"))
 					net_type = TCP_SERVER;
-				else if(!strcmp(optarg,"udp"))
-					net_type = UDP;
+				else if(!strcmp(optarg,"udpclient"))
+					net_type = UDP_CLIENT;
+				else if(!strcmp(optarg,"udpserver"))
+					net_type = UDP_SERVER;
 				else
 					net_type = -1;
 				break;
@@ -122,14 +132,20 @@ int initialize_network(int argc, char** argv){
 		exit(1);
 	}
 
-	setup_network(net_type,ip,port);
+	setup_network(ip,port);
 }
 
 ssize_t send_data(char* data, int data_len){
-	return send(sock, data, data_len, 0);
+	if(net_type == TCP_CLIENT || net_type == TCP_SERVER)
+		return send(sock, data, data_len, 0);
+	else
+		return sendto(sock,data,data_len, 0, NULL, 0); // replace NULL with sockaddr* struct
 }
 ssize_t receive_data(char* buf, int buf_len){
-	return read(sock, buf, buf_len);
+	if(net_type == TCP_CLIENT || net_type == TCP_SERVER)
+		return recv(sock, buf, buf_len, 0);
+	else
+		return recvfrom(sock,buf,buf_len,0, NULL, 0);
 }
 
 

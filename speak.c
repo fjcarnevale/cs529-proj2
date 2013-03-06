@@ -6,8 +6,6 @@
 #include <sys/resource.h>
 #include "network.h"
 
-void* listen_thread();
-
 int SAMPLE_TIME = 20; // sample size in milliseconds
 int SAMPLE_RATE = 8000;
 int SAMPLES_PER_PACKET = 4;
