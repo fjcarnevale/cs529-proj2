@@ -148,6 +148,9 @@ ssize_t receive_data(char* buf, int buf_len){
 		return recvfrom(sock,buf,buf_len,0, NULL, 0);
 }
 
+int get_socket(){
+	return sock;
+}
 
 
 

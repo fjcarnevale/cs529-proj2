@@ -1,14 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <unistd.h>
 #include <alsa/asoundlib.h>
 #include <sys/time.h>
+#include <sys/types.h>
 #include <sys/resource.h>
 #include "network.h"
 
 int SAMPLE_TIME = 20; // sample size in milliseconds
 int SAMPLE_RATE = 8000;
-int SAMPLES_PER_PACKET = 4;
+int SAMPLES_PER_PACKET = 1;
 int SAMPLE_SIZE;
 int ITL,ITU;
 
@@ -30,16 +32,45 @@ double energy(unsigned char* sample){
 void* listen_thread(){	
 	int buf_len = sizeof(char)*SAMPLE_SIZE*SAMPLES_PER_PACKET;
 	char* buf = (char*)malloc(buf_len);
+	char* silence[SAMPLE_SIZE];
 	int received,played;
+	int maxfd;
+	int sock = get_socket();
+	fd_set rset;
+	struct timeval alarm;
 
-	while((received = receive_data(buf, buf_len)) > 0){
-		printf("Received %d\n",received);
-		int x = snd_pcm_writei(handle_out,buf,received);
-		printf("Played %d\n",x);
-		if(x<0)
-			printf("Error: %s\n",snd_strerror(x));
-		buf = (char*)malloc(buf_len); 
+	FD_ZERO(&rset);
+	bzero(silence,SAMPLE_SIZE);
+
+	while(1){
+		FD_SET(sock, &rset);
+		maxfd = sock+1;
+
+		alarm.tv_sec = 0;
+		alarm.tv_usec = 20000;
+
+		if(select(maxfd,&rset,NULL,NULL,&alarm) == -1){
+			printf("select failed\n");
+			exit(1);
+		}
+
+		if(FD_ISSET(sock, &rset)){
+			received = receive_data(buf, buf_len);
+			int x = snd_pcm_writei(handle_out,buf,received);
+			printf("Played %d\n",x);
+			if(x<0){
+				printf("Error: %s\n",snd_strerror(x));
+				snd_pcm_recover(handle_out,x,1);
+			}
+			buf = (char*)malloc(buf_len); 	
+		}else{
+			int x = snd_pcm_writei(handle_out,silence,SAMPLE_SIZE);
+			printf("Played %d\n",x);
+		}
+
 	}
+
+	
 }
 
 void initialize_audio(){
@@ -78,6 +109,7 @@ void initialize_audio(){
 		printf("snd_pcm_set_params -- failed to set parameters on playing device\n");
 		exit(1);
 	}
+
 }
 
 void initialize_thresholds(){
