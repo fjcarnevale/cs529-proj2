@@ -1,11 +1,11 @@
 default: speak.o network.o
-	gcc speak.o network.o -lpthread -lasound -o speak
+	gcc -g speak.o network.o -lpthread -lasound -o speak
 
-speak:
-	gcc -c speak.c -lpthread -lasound
+speak: speak.c
+	gcc -g -c speak.c -lpthread -lasound
 
-network:
-	gcc -c network.c 
+network: network.c
+	gcc -g -c network.c 
 
 clean:
-	rm *.o speak network
+	rm *.o speak

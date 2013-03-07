@@ -12,7 +12,8 @@ int SAMPLES_PER_PACKET = 4;
 int SAMPLE_SIZE;
 int ITL,ITU;
 
-snd_pcm_t *handle_out, *handle_in;
+snd_pcm_t *handle_out;
+snd_pcm_t *handle_in;
 
 double energy(unsigned char* sample){
 	int i;
@@ -26,17 +27,22 @@ double energy(unsigned char* sample){
 	return sum;
 }
 
-void* listen_thread(){
+void* listen_thread(){	
 	int buf_len = sizeof(char)*SAMPLE_SIZE*SAMPLES_PER_PACKET;
 	char* buf = (char*)malloc(buf_len);
-	int received;
+	int received,played;
+
 	while((received = receive_data(buf, buf_len)) > 0){
-		snd_pcm_writei(handle_out,buf,received);
+		printf("Received %d\n",received);
+		int x = snd_pcm_writei(handle_out,buf,received);
+		printf("Played %d\n",x);
+		if(x<0)
+			printf("Error: %s\n",snd_strerror(x));
+		buf = (char*)malloc(buf_len); 
 	}
 }
 
 void initialize_audio(){
-
 	if(snd_pcm_open(&handle_in, "default", SND_PCM_STREAM_CAPTURE, 0) < 0){
 		printf("snd_pcm_open -- failed to open recording device\n");
 		exit(1);
@@ -54,12 +60,24 @@ void initialize_audio(){
 		printf("snd_pcm_set_params -- failed to set parameters on recording device\n");
 		exit(1);
 	}
-	
+
 	if(snd_pcm_open(&handle_out, "default", SND_PCM_STREAM_PLAYBACK, 0) < 0){
 		printf("snd_pcm_open -- failed to open playback device\n");
 		exit(1);
 	}
 
+	if(snd_pcm_set_params(
+			handle_out,
+			SND_PCM_FORMAT_U8,	
+			SND_PCM_ACCESS_RW_INTERLEAVED,
+			1, // channels
+			SAMPLE_RATE, // sample rate
+			1, // allow resampling
+			500000 // .5 seconds
+		) < 0 ){
+		printf("snd_pcm_set_params -- failed to set parameters on playing device\n");
+		exit(1);
+	}
 }
 
 void initialize_thresholds(){
@@ -97,6 +115,9 @@ void initialize_thresholds(){
 	}
 
 	ITU = 5 * ITL;
+
+	printf("ITU: %d\n",ITU);
+	printf("ITL: %d\n",ITL);
 }
 
 
@@ -115,7 +136,6 @@ int main(int argc, char** argv){
 
 	// start listening thread
 	pthread_t listener;
-	int n = 1; // substitute for actual arguments
 	pthread_create(&listener, NULL, (void*)listen_thread, NULL);
 	
 	// being recording
@@ -125,19 +145,23 @@ int main(int argc, char** argv){
 	int speech = 0;
 	double sample_energy;
 	while(1){
-		snd_pcm_readi(handle_in,&out_buffer[sample_index*SAMPLE_SIZE],SAMPLE_SIZE);
-		sample_energy = energy(&out_buffer[sample_index*SAMPLE_SIZE]);
 		
-		if((sample_energy > ITU && !speech) || (sample_energy > ITL && speech)){
+		snd_pcm_readi(handle_in,&(out_buffer[sample_index*SAMPLE_SIZE]),SAMPLE_SIZE);
+		sample_energy = energy(&(out_buffer[sample_index*SAMPLE_SIZE]));
+		
+		if(sample_energy > ITU || (sample_energy > ITL && speech == 1)){
+			speech = 1;
 			sample_index++;
 			if(sample_index == SAMPLES_PER_PACKET){
+				//printf("Sending speech\n");
 				send_data(out_buffer, SAMPLE_SIZE*sample_index);
+				out_buffer = (char*)malloc(buf_len);
 				sample_index = 0;
 			}
-		}
-		
-		if(sample_energy < ITL && speech){
+		}else if(sample_energy < ITL && speech == 1){
+			//printf("END SPEECH %d\n",sample_index);
 			send_data(out_buffer, SAMPLE_SIZE*sample_index);
+			out_buffer = (char*)malloc(buf_len);
 			speech = 0;
 			sample_index = 0;
 		}
