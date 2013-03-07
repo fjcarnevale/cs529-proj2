@@ -71,11 +71,45 @@ void setup_udp_server(char* ip, int port){
 		printf("Failed to open socket\n");
 		exit(1);
 	}
+
+	bzero((char *)&server_addr, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = inet_addr(ip);
+	server_addr.sin_port = htons(port);
+
+	if (bind(sock, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
+     		printf("Failed to bind to local address\n");
+     		exit(1);
+   	}
+
+	char tmp[1];
+	int len = sizeof(struct sockaddr_in);
+	printf("Waiting for dummy packet\n");
+	recvfrom(sock,tmp,1,0,(struct sockaddr*)&client_addr,&len);
+	printf("Got dummy from client\n");
 }
 
 void udp_connect(char* ip, int port){
+	if((sock = socket(AF_INET,SOCK_DGRAM,0))<0){
+		printf("Failed to open socket\n");
+		exit(1);
+	}
 
+	bzero((char *)&server_addr, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = inet_addr(ip);
+	server_addr.sin_port = htons(port);
 
+	if (connect(sock,(struct sockaddr *) &server_addr,sizeof(server_addr)) < 0) {
+		printf("Failed to connect UDP socket to server\n");
+		close(sock);
+		exit(1);
+	}
+
+	char* tmp = (char*)malloc(sizeof(char));
+	int x = sendto(sock,tmp,1,0,(struct sockaddr*)&server_addr,sizeof(server_addr));
+
+	printf("Sent dummy len: %d\n",x);
 }
 
 
@@ -93,44 +127,15 @@ int setup_network(char* ip, int port){
 }
 
 
-int initialize_network(int argc, char** argv){
-	char* ip = NULL;
-	int port = -1;
-
-	char c;
-	extern int optind, opterr;
-	extern char* optarg;
-
-	while (( c = getopt( argc, argv, "m:a:p:" )) != EOF) {
-		switch ( c ) {
-			case 'm':
-				if(!strcmp(optarg,"tcpclient"))
-					net_type = TCP_CLIENT;
-				else if(!strcmp(optarg,"tcpserver"))
-					net_type = TCP_SERVER;
-				else if(!strcmp(optarg,"udpclient"))
-					net_type = UDP_CLIENT;
-				else if(!strcmp(optarg,"udpserver"))
-					net_type = UDP_SERVER;
-				else
-					net_type = -1;
-				break;
-			case 'a':
-				if(optarg != NULL)
-					ip = optarg;
-				break;
-			case 'p':
-				if(optarg != NULL)
-					port = 	atoi(optarg);
-				break;		
-
-		}
-	}
-	
-	if(net_type == -1 || ip == NULL || port == -1){
-		printf("incorrect arguments\n");
-		exit(1);
-	}
+int initialize_network(char* network_type, char* ip, int port){
+	if(!strcmp(network_type,"tcpclient"))
+		net_type = TCP_CLIENT;
+	else if(!strcmp(network_type,"tcpserver"))
+		net_type = TCP_SERVER;
+	else if(!strcmp(network_type,"udpclient"))
+		net_type = UDP_CLIENT;
+	else
+		net_type = UDP_SERVER;
 
 	setup_network(ip,port);
 }
@@ -139,13 +144,15 @@ ssize_t send_data(char* data, int data_len){
 	if(net_type == TCP_CLIENT || net_type == TCP_SERVER)
 		return send(sock, data, data_len, 0);
 	else
-		return sendto(sock,data,data_len, 0, NULL, 0); // replace NULL with sockaddr* struct
+		return sendto(sock,data,data_len,0,(struct sockaddr*)&client_addr,sizeof(client_addr));
 }
 ssize_t receive_data(char* buf, int buf_len){
-	if(net_type == TCP_CLIENT || net_type == TCP_SERVER)
+	if(net_type == TCP_CLIENT || net_type == TCP_SERVER){
 		return recv(sock, buf, buf_len, 0);
-	else
-		return recvfrom(sock,buf,buf_len,0, NULL, 0);
+	}else{
+		int len = sizeof(struct sockaddr_in);
+		return recvfrom(sock,buf,buf_len,0,(struct sockaddr*)&client_addr.sin_addr,&len);
+	}
 }
 
 int get_socket(){

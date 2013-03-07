@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <time.h>
 #include <alsa/asoundlib.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -12,6 +13,7 @@ int SAMPLE_TIME = 20; // sample size in milliseconds
 int SAMPLE_RATE = 8000;
 int SAMPLES_PER_PACKET = 1;
 int SAMPLE_SIZE;
+int DROP_RATE = 0;
 int ITL,ITU;
 
 snd_pcm_t *handle_out;
@@ -35,9 +37,29 @@ void* listen_thread(){
 	char* silence[SAMPLE_SIZE];
 	int received,played;
 	int maxfd;
+	int next_timer = 20000;
 	int sock = get_socket();
 	fd_set rset;
 	struct timeval alarm;
+
+	
+	if(snd_pcm_open(&handle_out, "default", SND_PCM_STREAM_PLAYBACK, 0) < 0){
+		printf("snd_pcm_open -- failed to open playback device\n");
+		exit(1);
+	}
+
+	if(snd_pcm_set_params(
+			handle_out,
+			SND_PCM_FORMAT_U8,	
+			SND_PCM_ACCESS_RW_INTERLEAVED,
+			1, // channels
+			SAMPLE_RATE, // sample rate
+			1, // allow resampling
+			500000 // .5 seconds
+		) < 0 ){
+		printf("snd_pcm_set_params -- failed to set parameters on playing device\n");
+		exit(1);
+	}
 
 	FD_ZERO(&rset);
 	bzero(silence,SAMPLE_SIZE);
@@ -47,7 +69,7 @@ void* listen_thread(){
 		maxfd = sock+1;
 
 		alarm.tv_sec = 0;
-		alarm.tv_usec = 20000;
+		alarm.tv_usec = next_timer;
 
 		if(select(maxfd,&rset,NULL,NULL,&alarm) == -1){
 			printf("select failed\n");
@@ -57,7 +79,8 @@ void* listen_thread(){
 		if(FD_ISSET(sock, &rset)){
 			received = receive_data(buf, buf_len);
 			int x = snd_pcm_writei(handle_out,buf,received);
-			printf("Played %d\n",x);
+			next_timer = 1000 * received / 8;
+			//printf("Played %d\n",x);
 			if(x<0){
 				printf("Error: %s\n",snd_strerror(x));
 				snd_pcm_recover(handle_out,x,1);
@@ -65,7 +88,8 @@ void* listen_thread(){
 			buf = (char*)malloc(buf_len); 	
 		}else{
 			int x = snd_pcm_writei(handle_out,silence,SAMPLE_SIZE);
-			printf("Played %d\n",x);
+			next_timer = 20000;
+			//printf("Played %d\n",x);
 		}
 
 	}
@@ -92,23 +116,6 @@ void initialize_audio(){
 		exit(1);
 	}
 
-	if(snd_pcm_open(&handle_out, "default", SND_PCM_STREAM_PLAYBACK, 0) < 0){
-		printf("snd_pcm_open -- failed to open playback device\n");
-		exit(1);
-	}
-
-	if(snd_pcm_set_params(
-			handle_out,
-			SND_PCM_FORMAT_U8,	
-			SND_PCM_ACCESS_RW_INTERLEAVED,
-			1, // channels
-			SAMPLE_RATE, // sample rate
-			1, // allow resampling
-			500000 // .5 seconds
-		) < 0 ){
-		printf("snd_pcm_set_params -- failed to set parameters on playing device\n");
-		exit(1);
-	}
 
 }
 
@@ -155,10 +162,44 @@ void initialize_thresholds(){
 
 
 int main(int argc, char** argv){
+
+	char c;
+	char *ip,*net_type;
+	int port;
+	extern int optind, opterr;
+	extern char* optarg;
+
+	while (( c = getopt( argc, argv, "m:a:p:s::d::" )) != EOF) {
+		switch ( c ) {
+			case 'm':
+				net_type = optarg;
+				break;
+			case 'a':
+				ip = optarg;
+				break;
+			case 'p':
+				port = 	atoi(optarg);
+				break;		
+			case 's':
+				SAMPLE_TIME = atoi(optarg);
+				break;
+			case 'd':
+				DROP_RATE = atoi(optarg);
+				break;	
+
+		}
+	}
+
+	printf("Drop rate: %d\n",DROP_RATE);
+	printf("Sample time: %d msec\n",SAMPLE_TIME);
+
+
 	SAMPLE_SIZE = SAMPLE_TIME*SAMPLE_RATE / 1000;
 
+	printf("Sample size: %d bytes\n",SAMPLE_SIZE);
+
 	// init network
-	initialize_network(argc, argv);
+	initialize_network(net_type,ip,port);
 	
 	// init audio
 	initialize_audio();
@@ -176,6 +217,7 @@ int main(int argc, char** argv){
 	int sample_index = 0;
 	int speech = 0;
 	double sample_energy;
+	srandom(time(NULL));
 	while(1){
 		
 		snd_pcm_readi(handle_in,&(out_buffer[sample_index*SAMPLE_SIZE]),SAMPLE_SIZE);
@@ -186,13 +228,15 @@ int main(int argc, char** argv){
 			sample_index++;
 			if(sample_index == SAMPLES_PER_PACKET){
 				//printf("Sending speech\n");
-				send_data(out_buffer, SAMPLE_SIZE*sample_index);
+				if(random()%100 > DROP_RATE)
+					send_data(out_buffer, SAMPLE_SIZE*sample_index);
 				out_buffer = (char*)malloc(buf_len);
 				sample_index = 0;
 			}
 		}else if(sample_energy < ITL && speech == 1){
 			//printf("END SPEECH %d\n",sample_index);
-			send_data(out_buffer, SAMPLE_SIZE*sample_index);
+			if(random()%100 > DROP_RATE)
+				send_data(out_buffer, SAMPLE_SIZE*sample_index);
 			out_buffer = (char*)malloc(buf_len);
 			speech = 0;
 			sample_index = 0;
