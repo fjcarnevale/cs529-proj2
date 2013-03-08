@@ -1,0 +1,41 @@
+Frank Carnevale
+CS 529 Project 2
+
+Arguments
+
+Required:
+-m <mode>, where mode is one of 'tcpserver', 'tcpclient', 'udpserver', 'udpclient'
+-a <ip>  , where ip is an IP address of the form x.x.x.x
+-p <port>, specifying the port number
+
+Optional: (The lack of a space between the option and value matters here for unknown reasons):
+-s<sample>, specifies the time for each sample in milliseconds - default is 20
+-d<droprate>, specifies the rate to drop packets; for example, a value of 5 would drop 5% of outbound packets - default is 0
+-v , if specified, disables speech detection
+
+Example commands:
+
+./speak -m udpserver -a 127.0.0.1 -p 30000 -s20 -d5 -v
+Sets up a udpserver on port 30000 with a sample chunk size of 20milliseconds, a drop rate of 5%, and disables speech detection.
+
+./speak -m udpclient -a 127.0.0.1 -p 30000 -s80 -d10
+Sets up a udpclient on port 30000 with a sample chunk size of 80 milliseconds, a drop rate of 10%, and leaves speech detection enabled.
+
+
+Notes:
+End the program by hitting control-c. 
+
+Whether running over UDP or TCP, run speak in one of the server modes first. Then run it on a 
+different machine in the corresponding client mode. So for example, first run one as 
+'-m tcpserver', then another as 'tcpclient' and point it at the server.
+
+The '-a <ip>' argument is required even when in one of the server modes, though it isn't used. There
+is no default port, it must always be provided via '-p <port>'.
+
+The program should work even if the client and server are using different sample sizes.
+
+I ran into an error where if I didn't write data to be played back fast enough (for example, a long gap between speech),
+I'd get an broken pipe error. When this happens, the program will post a message and *should* recover from it.
+
+There is also sometimes an error where playback will fail if speaking consecutively for maybe 10 seconds. It seems to be 
+temporary, and after a few seconds of silence will work again. 
