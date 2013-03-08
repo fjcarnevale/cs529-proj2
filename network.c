@@ -66,7 +66,7 @@ void tcp_connect(char* ip, int port){
 	printf("Connected to server\n");
 }
 
-void setup_udp_server(char* ip, int port){
+void setup_udp_server(int port){
 	if((sock = socket(AF_INET,SOCK_DGRAM,0))<0){
 		printf("Failed to open socket\n");
 		exit(1);
@@ -74,7 +74,7 @@ void setup_udp_server(char* ip, int port){
 
 	bzero((char *)&server_addr, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
-	server_addr.sin_addr.s_addr = inet_addr(ip);
+	server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	server_addr.sin_port = htons(port);
 
 	if (bind(sock, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
@@ -84,9 +84,9 @@ void setup_udp_server(char* ip, int port){
 
 	char tmp[1];
 	int len = sizeof(struct sockaddr_in);
-	printf("Waiting for dummy packet\n");
+	//printf("Waiting for dummy packet\n");
 	recvfrom(sock,tmp,1,0,(struct sockaddr*)&client_addr,&len);
-	printf("Got dummy from client\n");
+	//printf("Got dummy from client\n");
 }
 
 void udp_connect(char* ip, int port){
@@ -109,7 +109,7 @@ void udp_connect(char* ip, int port){
 	char* tmp = (char*)malloc(sizeof(char));
 	int x = sendto(sock,tmp,1,0,(struct sockaddr*)&server_addr,sizeof(server_addr));
 
-	printf("Sent dummy len: %d\n",x);
+	//printf("Sent dummy len: %d\n",x);
 }
 
 
@@ -120,7 +120,7 @@ int setup_network(char* ip, int port){
 	}else if(net_type == TCP_SERVER){
 		setup_tcp_server(port);
 	}else if(net_type == UDP_SERVER){
-		setup_udp_server(ip, port);
+		setup_udp_server(port);
 	}else{
 		udp_connect(ip,port);
 	}

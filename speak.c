@@ -14,6 +14,7 @@ int SAMPLE_RATE = 8000;
 int SAMPLES_PER_PACKET = 1;
 int SAMPLE_SIZE;
 int DROP_RATE = 0;
+int SPEECH_DETECT = 1;
 int ITL,ITU;
 
 snd_pcm_t *handle_out;
@@ -37,7 +38,7 @@ void* listen_thread(){
 	char* silence[SAMPLE_SIZE];
 	int received,played;
 	int maxfd;
-	int next_timer = 20000;
+	int next_timer = SAMPLE_TIME*1.5*1000;
 	int sock = get_socket();
 	fd_set rset;
 	struct timeval alarm;
@@ -68,7 +69,7 @@ void* listen_thread(){
 		FD_SET(sock, &rset);
 		maxfd = sock+1;
 
-		alarm.tv_sec = 0;
+		alarm.tv_sec = 2;
 		alarm.tv_usec = next_timer;
 
 		if(select(maxfd,&rset,NULL,NULL,&alarm) == -1){
@@ -80,16 +81,14 @@ void* listen_thread(){
 			received = receive_data(buf, buf_len);
 			int x = snd_pcm_writei(handle_out,buf,received);
 			next_timer = 1000 * received / 8;
-			//printf("Played %d\n",x);
 			if(x<0){
-				printf("Error: %s\n",snd_strerror(x));
+				printf("Recovering: %s\n",snd_strerror(x));
 				snd_pcm_recover(handle_out,x,1);
 			}
 			buf = (char*)malloc(buf_len); 	
 		}else{
 			int x = snd_pcm_writei(handle_out,silence,SAMPLE_SIZE);
-			next_timer = 20000;
-			//printf("Played %d\n",x);
+			next_timer = SAMPLE_TIME*1.5*1000;
 		}
 
 	}
@@ -169,7 +168,7 @@ int main(int argc, char** argv){
 	extern int optind, opterr;
 	extern char* optarg;
 
-	while (( c = getopt( argc, argv, "m:a:p:s::d::" )) != EOF) {
+	while (( c = getopt( argc, argv, "m:a:p:s::d::v::" )) != EOF) {
 		switch ( c ) {
 			case 'm':
 				net_type = optarg;
@@ -186,6 +185,9 @@ int main(int argc, char** argv){
 			case 'd':
 				DROP_RATE = atoi(optarg);
 				break;	
+			case 'v':
+				SPEECH_DETECT = 0;
+				break;
 
 		}
 	}
@@ -212,34 +214,32 @@ int main(int argc, char** argv){
 	pthread_create(&listener, NULL, (void*)listen_thread, NULL);
 	
 	// being recording
-	int buf_len = sizeof(char)*SAMPLE_SIZE*SAMPLES_PER_PACKET;
+	int buf_len = sizeof(char)*SAMPLE_SIZE;
 	char* out_buffer = (char*)malloc(buf_len);
-	int sample_index = 0;
 	int speech = 0;
 	double sample_energy;
 	srandom(time(NULL));
 	while(1){
+		snd_pcm_readi(handle_in,out_buffer,SAMPLE_SIZE);
+
+		if(SPEECH_DETECT==1){
+			sample_energy = energy(out_buffer);
 		
-		snd_pcm_readi(handle_in,&(out_buffer[sample_index*SAMPLE_SIZE]),SAMPLE_SIZE);
-		sample_energy = energy(&(out_buffer[sample_index*SAMPLE_SIZE]));
-		
-		if(sample_energy > ITU || (sample_energy > ITL && speech == 1)){
-			speech = 1;
-			sample_index++;
-			if(sample_index == SAMPLES_PER_PACKET){
-				//printf("Sending speech\n");
+			if(sample_energy > ITU || (sample_energy > ITL && speech == 1)){
+				speech = 1;
 				if(random()%100 > DROP_RATE)
-					send_data(out_buffer, SAMPLE_SIZE*sample_index);
+					send_data(out_buffer, SAMPLE_SIZE);
 				out_buffer = (char*)malloc(buf_len);
-				sample_index = 0;
+			}else if(sample_energy < ITL && speech == 1){
+				if(random()%100 > DROP_RATE){
+					int x = send_data(out_buffer, SAMPLE_SIZE);
+				}
+				out_buffer = (char*)malloc(buf_len);
+				speech = 0;
 			}
-		}else if(sample_energy < ITL && speech == 1){
-			//printf("END SPEECH %d\n",sample_index);
-			if(random()%100 > DROP_RATE)
-				send_data(out_buffer, SAMPLE_SIZE*sample_index);
-			out_buffer = (char*)malloc(buf_len);
-			speech = 0;
-			sample_index = 0;
+		}else{
+			int x = send_data(out_buffer, SAMPLE_SIZE);
+			out_buffer = (char*)malloc(buf_len);	
 		}
 	
 	}
