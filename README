@@ -34,6 +34,9 @@ is no default port, it must always be provided via '-p <port>'.
 
 The program should work even if the client and server are using different sample sizes.
 
+When the program starts, it records 10 sample chunks worth of sound to determine thresholds. If there's some 
+inadvertant noise during this period, it could throw speech detection off. 
+
 I ran into an error where if I didn't write data to be played back fast enough (for example, a long gap between speech),
 I'd get an broken pipe error. When this happens, the program will post a message and *should* recover from it.
 

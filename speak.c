@@ -20,6 +20,7 @@ int ITL,ITU;
 snd_pcm_t *handle_out;
 snd_pcm_t *handle_in;
 
+// Computes energy of a given sample
 double energy(unsigned char* sample){
 	int i;
 	double sum=0;
@@ -32,6 +33,7 @@ double energy(unsigned char* sample){
 	return sum;
 }
 
+// Fuction for thread to receive and play sound from the other user
 void* listen_thread(){	
 	int buf_len = sizeof(char)*SAMPLE_SIZE*SAMPLES_PER_PACKET;
 	char* buf = (char*)malloc(buf_len);
@@ -43,7 +45,7 @@ void* listen_thread(){
 	fd_set rset;
 	struct timeval alarm;
 
-	
+	// Open playback device
 	if(snd_pcm_open(&handle_out, "default", SND_PCM_STREAM_PLAYBACK, 0) < 0){
 		printf("snd_pcm_open -- failed to open playback device\n");
 		exit(1);
@@ -69,9 +71,12 @@ void* listen_thread(){
 		FD_SET(sock, &rset);
 		maxfd = sock+1;
 
-		alarm.tv_sec = 2;
+		alarm.tv_sec = 0;
 		alarm.tv_usec = next_timer;
 
+		// Use select to see if there's speech available on the socket
+		// If not, timeout and play silence
+		// Seemed to alleviate some but not all broken pipe errors
 		if(select(maxfd,&rset,NULL,NULL,&alarm) == -1){
 			printf("select failed\n");
 			exit(1);
@@ -96,6 +101,7 @@ void* listen_thread(){
 	
 }
 
+// Initialize the recording device
 void initialize_audio(){
 	if(snd_pcm_open(&handle_in, "default", SND_PCM_STREAM_CAPTURE, 0) < 0){
 		printf("snd_pcm_open -- failed to open recording device\n");
@@ -118,6 +124,7 @@ void initialize_audio(){
 
 }
 
+// Record ten sample chunks to determine speech energy thresholds
 void initialize_thresholds(){
 	
 	unsigned char buffer[SAMPLE_SIZE*10];
@@ -220,23 +227,24 @@ int main(int argc, char** argv){
 	double sample_energy;
 	srandom(time(NULL));
 	while(1){
+		// Record sample
 		snd_pcm_readi(handle_in,out_buffer,SAMPLE_SIZE);
-
+		// If using speech detection
 		if(SPEECH_DETECT==1){
+			// Determine engery
 			sample_energy = energy(out_buffer);
-		
+			
+			// If we currently have speech, send it (possibly dropping)
 			if(sample_energy > ITU || (sample_energy > ITL && speech == 1)){
 				speech = 1;
 				if(random()%100 > DROP_RATE)
 					send_data(out_buffer, SAMPLE_SIZE);
 				out_buffer = (char*)malloc(buf_len);
+			// Otherwise indicate speech ended
 			}else if(sample_energy < ITL && speech == 1){
-				if(random()%100 > DROP_RATE){
-					int x = send_data(out_buffer, SAMPLE_SIZE);
-				}
-				out_buffer = (char*)malloc(buf_len);
 				speech = 0;
 			}
+		// If not using speech detection, send everything
 		}else{
 			int x = send_data(out_buffer, SAMPLE_SIZE);
 			out_buffer = (char*)malloc(buf_len);	
